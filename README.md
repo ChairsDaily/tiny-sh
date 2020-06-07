@@ -10,3 +10,5 @@ Ctr.Z to Exit
 
 ~ 
 ```
+
+THIS IS FREE SOFTWARE
