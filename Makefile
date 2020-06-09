@@ -5,7 +5,7 @@ CC=gcc
 CFLAGS=-std=c99 -Wall
 PROGRAM=src/tinysh.c
 
-.PHONY: build clean test 
+.PHONY: build clean test sync
 
 default: build
 build:
@@ -14,6 +14,9 @@ build:
 
 test:
 	./bin/tinysh
+
+sync:
+	- bash sync.sh "update"
 
 clean:
 	-rm -rf bin

@@ -1,4 +1,20 @@
-
+/*
+*    Simple UNIX shell with one builtin for changing directory.
+*    Copyleft (C) 2020  Kaleb Horvath
+*
+*    This program is free software: you can redistribute it and/or modify
+*    it under the terms of the GNU General Public License as published by
+*    the Free Software Foundation, either version 3 of the License, or
+*    (at your option) any later version.
+*
+*    This program is distributed in the hope that it will be useful,
+*    but WITHOUT ANY WARRANTY; without even the implied warranty of
+*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*    GNU General Public License for more details.
+*
+*   You should have received a copy of the GNU General Public License
+*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +33,12 @@
 #define PROGRAM_STRING         "Tiny.sh Version 0.1"
 #define COPY_STRING            "Copyleft (C) 2020 Kaleb H."
 
+/*
+* Reallocate token buffer
+* @param buffer the original block of memory
+* @param bufsize the new allocation size
+* @return resized buffer
+*/
 char** tsh_realloc (char** buffer, int bufsize) {
     bufsize *= sizeof(char*);
     buffer = realloc(buffer, bufsize);
@@ -29,6 +51,11 @@ char** tsh_realloc (char** buffer, int bufsize) {
     return buffer;
 }
 
+/*
+* Tokenize a line from standard in (taken from editline)
+* @param line of text taken from stdin
+* @return a buffer of tokens ready for execvp
+*/
 char** tsh_tokenize (char* line) {
 
     int bufsize = TOKEN_BUFSIZE;
@@ -51,6 +78,12 @@ char** tsh_tokenize (char* line) {
     return tokens;
 }
 
+/*
+* Fork, exec, and wait for child process
+* @param command line arguments
+* @return zero if successful
+* raises EXEC_ERROR if something whent wrong
+*/
 int tsh_execute (char** args) {
     pid_t pid;
     int status;
