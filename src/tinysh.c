@@ -1,20 +1,3 @@
-/*
-*    Simple UNIX shell with one builtin for changing directory.
-*    Copyleft (C) 2020  Kaleb Horvath
-*
-*    This program is free software: you can redistribute it and/or modify
-*    it under the terms of the GNU General Public License as published by
-*    the Free Software Foundation, either version 3 of the License, or
-*    (at your option) any later version.
-*
-*    This program is distributed in the hope that it will be useful,
-*    but WITHOUT ANY WARRANTY; without even the implied warranty of
-*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*    GNU General Public License for more details.
-*
-*   You should have received a copy of the GNU General Public License
-*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,7 +6,12 @@
 #include <unistd.h>
 #include <editline/readline.h>
 #include <editline/history.h>
-#include "tinysh.h"
+
+#define BUFSIZE         10
+#define ALLOC_ERROR     "allocation error\n"
+#define EXEC_ERROR      "execution error\n"
+#define ARG_ERROR       "argument error\n"
+#define DELIMS          " \t\r\n\a "
 
 int tsh_cd(char **args);
 int tsh_export(char **args);
@@ -38,155 +26,188 @@ int (*builtin_funcs[]) (char**) = {
     &tsh_export
 };
 
-/*
-* Reallocate token buffer
-* @param buffer the original block of memory
-* @param bufsize the new allocation size
-* @return resized buffer
-*/
-char** tsh_realloc (char** buffer, int bufsize) {
-    bufsize *= sizeof(char*);
-    buffer = realloc(buffer, bufsize);
+void tsh_error_handle (char* error) {
+    fprintf(stderr, error);
 
-    if (!buffer) {
-        fprintf(stderr, ALLOC_ERROR);
+    if (error != EXEC_ERROR) {
         exit(-1);
     }
+}
 
+/* Reallocate heap memory for array of strings
+*  (used in tokenizer if the user input is too large)
+*  @param buffer the original allocation
+*  @param new_size the new amount of bytes to allocate
+*  @return pointer to the start of newly allocated space
+*/
+char** tsh_realloc (char** buffer, int new_size) {
+    
+    new_size *= sizeof(char*);
+    buffer = realloc(buffer, new_size);
+
+    // malloc can fail if you use up more process
+    // memory than is allowed by OS
+    if (!buffer) {
+        tsh_error_handle(ALLOC_ERROR);
+    }
     return buffer;
 }
 
-/*
-* Tokenize a line from standard in (taken from editline)
-* @param line of text taken from stdin
-* @return a buffer of tokens ready for execvp
+/* Split a shell command into tokens to be passed to execvp
+*  @param input string, must be non-static and not in .text
+*          (heap allocd works, or reading from stdin, but not char[])
+*  @return pointer to the start of the allocated heap space for the
+*          array of strings
 */
-char** tsh_tokenize (char* str) {
+char** tsh_splitcmd (char* str) {
 
-    int size = TOKEN_BUFSIZE;
-    int loc = 0;
-    char** words = malloc(sizeof(char*) * size);
-    char* ptr;
+    // allocate space for array of strings
+    // which will hold result after we split
+    int size = BUFSIZE;
+    char** tokens = malloc(sizeof(char*) * size);
+    char* curr_token;
+    int location = 0;
 
-    ptr = strtok(str, TOKEN_DELIM);
-    while (ptr != NULL) {
-        words[loc] = ptr; 
-        loc++;
+    // as long as strtok was able to split on delim
+    // continue copying token into tokens buffer
+    curr_token = strtok(str, DELIMS);
+    while (curr_token != NULL) {
+        tokens[location] = curr_token;
+        location++;
 
-        if (loc >= size) {
-            size += TOKEN_BUFSIZE;
-            words = tsh_realloc(words, size);
+        if (location >= size) {
+
+            size += BUFSIZE;
+            tokens = tsh_realloc(tokens, size);
         }
-        ptr = strtok(NULL, TOKEN_DELIM);
+        curr_token = strtok(NULL, DELIMS);
     }
-    words[loc] = NULL;
-    return words;
+    // NULL terminate the array of strings
+    // so our builtins know when the arguments
+    // run out 
+    tokens[location] = NULL;
+    return tokens;
 }
 
-
-/*
-* Fork, exec, and wait for child process
-* @param command line arguments
-* @return zero if successful
-* raises EXEC_ERROR if something whent wrong
+/* Execute a command that can be found in PATH
+*  (this introduces the need to modify the environment
+*   block of our processes memory)
+*  @param arguments the result of tsh_tokenize over a non-static character array
+*  @return 0 on success, raises ARGS/EXEC_ERROR otherwise
 */
-int tsh_execute (char** args) {
+int tsh_execute (char** arguments) {
+    
+    // not unsigned int cuz they told me so >>.>>
     pid_t pid;
-    int status;
+    int status_lock;
 
+    // null check the arguments, 0 should never be NULL
+    if (arguments[0] == NULL) {
+        tsh_error_handle(ARG_ERROR);
+    }
+
+    // will copy our process
+    // we now have to handle the child context
+    // and the parent context
     pid = fork();
     if (pid == 0) {
-        // the child process will land here
-        // execvp will replace forked copy with program
-        // in arguments
-        if (execvp(args[0], args) == -1) {
-            fprintf(stderr, EXEC_ERROR);
-        }
-        exit(-1);
+        
+        // this is the child, so lets replace
+        // it with the program to run
+        // using exec system call
+        // (note on success this will redirect its output to stdout)
+        if (execvp(arguments[0], arguments) == -1) {
 
+            // will exit out our child process not this shell instance
+            tsh_error_handle(EXEC_ERROR);
+        }
     } else if (pid == -1) {
-        fprintf(stderr, EXEC_ERROR);
-        exit(-1);
-    } else {
-        // parent process lands here
-        // forces parent to wait for child
-        waitpid(pid, &status, 0);
-    }
 
-    return SHELL_STATUS;
+        // this means that there was an error forking
+        // our process 
+        tsh_error_handle(EXEC_ERROR);
+    } else {
+        // this is where our parent process lands
+        // lets wait for the child to finish
+        // note we have to point it to the status lock
+        waitpid(pid, &status_lock, 0);
+    }
+    return 0; // UNIX success
 }
 
-int tsh_cd (char** args) {
-    if (args[1] == NULL) {
-        fprintf(stderr, EXEC_ERROR); exit(-1);
-    } else {
-        if (chdir(args[1]) != 0) {
-            perror("tsh");
-        }
-    }
-    return SHELL_STATUS;
+/*
+* Here we implement our three builtins
+* the main loop should NULL check pointers 0-2
+* and raise ARG_ERROR if it hits one
+* before any of these run
+*/
+int tsh_cd (char** arguments) {
+    if (chdir(arguments[1]) != 0)
+        perror("tsh");
+
+    return 0;
 }
 
-int tsh_export (char** args) {
+int tsh_import (char** arguments) {
 
-    if (args[1] == NULL) {
-
-        fprintf(stderr, EXEC_ERROR);
-        exit(-1);
+    // this because getenv does not write to stdout
+    char* value = getenv(arguments[1]);
+    if (value == NULL) {
+        tsh_error_handle(EXEC_ERROR);
     } else {
-        // env memory block is process-local
-        // so this only affects us and our children
-        if (setenv(args[1], args[2], 1) != 0)
-            perror("tsh");
+
+        // auto prints until '\0' termination
+        // auto derefs the pointer as well
+        /* 
+            without auto dereffing, youd have to do the following
+            (where p is a pointer to heap memory for a character array
+            and s is a string literal)
+            
+            memcpy(p, s, strlen(s) + 1);
+            while (*p != '\0') {
+                printf("%c", *p);   // deref to get val@addr
+                p++;                // incr address
+            }
+        */
+        printf("%s\n", value);
     }
-    return SHELL_STATUS;
+    return 0; 
 }
 
-int tsh_import (char** args) {
+int tsh_export (char** arguments) {
 
-    char* value;
-    
-    if (args[1] == NULL) {
+    if (setenv(arguments[1], arguments[2], 1) != 0)
+        tsh_error_handle(EXEC_ERROR);
 
-        fprintf(stderr, EXEC_ERROR);
-        exit(-1);
-    } else {
-        value = getenv(args[1]);
-        if (value == NULL) {
-            fprintf(stderr, EXEC_ERROR);
-        } else {
-            printf("%s\n", value);
-        }
-    }
-    return SHELL_STATUS;
+    return 0;
 }
 
 int main (int argc, char** argv) {
 
-    puts (PROGRAM_STRING);
-    puts (COPY_STRING);
-    puts ("Ctr.Z to Exit\n");
+    // env memory block is process-local
+    // so this only affects us and outinysh
+    puts ("FREE SOFTWARE");
+    puts ("ctrl+z to Exit\n");
 
-    while (!SHELL_STATUS) {
+    while (1) {
 
         char* input = readline("~ ");
         if (strcmp(input, "") == 0) {continue;}
 
         add_history(input);
-        char** tokens = tsh_tokenize(input);
-        int execd = 0;
+        char** tokens = tsh_splitcmd(input);
+        int did_exec = 0;
 
         for (int i = 0; i < 3; i++) {
             if (strcmp(tokens[0], builtins[i]) == 0) {
 
                 (*builtin_funcs[i])(tokens);
-                execd = 1;
+                did_exec = 1;
             }
         }
-        if (!execd) tsh_execute(tokens);
+        if (!did_exec) tsh_execute(tokens);
 
         free(input);
         free(tokens);
     }
 }
-

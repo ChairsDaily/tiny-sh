@@ -13,7 +13,7 @@ build:
 	- gcc $(CFLAGS) $(PROGRAM) $(LIBS) -o bin/tinysh
 
 test:
-	./bin/tinysh
+	./bin/take2
 
 sync:
 	- bash sync.sh "update"
