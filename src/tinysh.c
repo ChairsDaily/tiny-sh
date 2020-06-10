@@ -21,7 +21,6 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <unistd.h>
-
 #include <editline/readline.h>
 #include <editline/history.h>
 #include "tinysh.h"
@@ -49,27 +48,28 @@ char** tsh_realloc (char** buffer, int bufsize) {
 * @param line of text taken from stdin
 * @return a buffer of tokens ready for execvp
 */
-char** tsh_tokenize (char* line) {
+char** tsh_tokenize (char* str) {
 
-    int bufsize = TOKEN_BUFSIZE;
-    int location = 0;
-    char** tokens = malloc(sizeof(char*) * bufsize);
-    char* token;
+    int size = TOKEN_BUFSIZE;
+    int loc = 0;
+    char** words = malloc(sizeof(char*) * size);
+    char* ptr;
 
-    token = strtok(line, TOKEN_DELIM);
-    while (token != NULL) {
-        tokens[location] = token; 
-        location++;
+    ptr = strtok(str, TOKEN_DELIM);
+    while (ptr != NULL) {
+        words[loc] = ptr; 
+        loc++;
 
-        if (location >= bufsize) {
-            bufsize += TOKEN_BUFSIZE;
-            tokens = tsh_realloc(tokens, bufsize);
+        if (loc >= size) {
+            size += TOKEN_BUFSIZE;
+            words = tsh_realloc(words, size);
         }
-        token = strtok(NULL, TOKEN_DELIM);
+        ptr = strtok(NULL, TOKEN_DELIM);
     }
-    tokens[location] = NULL;
-    return tokens;
+    words[loc] = NULL;
+    return words;
 }
+
 
 /*
 * Fork, exec, and wait for child process
@@ -83,19 +83,27 @@ int tsh_execute (char** args) {
 
     pid = fork();
     if (pid == 0) {
+        // the child process will land here
+        // execvp will replace forked copy with program
+        // in arguments
         if (execvp(args[0], args) == -1) {
             fprintf(stderr, EXEC_ERROR);
         }
         exit(-1);
 
+    } else if (pid == -1) {
+        fprintf(stderr, EXEC_ERROR);
+        exit(-1);
     } else {
+        // parent process lands here
+        // forces parent to wait for child
         waitpid(pid, &status, 0);
     }
 
-    return 0;
+    return SHELL_STATUS;
 }
 
-void tsh_cd (char** args) {
+int tsh_cd (char** args) {
     if (args[1] == NULL) {
         fprintf(stderr, EXEC_ERROR); exit(-1);
     } else {
@@ -103,6 +111,41 @@ void tsh_cd (char** args) {
             perror("tsh");
         }
     }
+    return SHELL_STATUS;
+}
+
+int tsh_export (char** args) {
+
+    if (args[1] == NULL) {
+
+        fprintf(stderr, EXEC_ERROR);
+        exit(-1);
+    } else {
+        // env memory block is process-local
+        // so this only affects us and our children
+        if (setenv(args[1], args[2], 1) != 0)
+            perror("tsh");
+    }
+    return SHELL_STATUS;
+}
+
+int tsh_import (char** args) {
+
+    char* value;
+    
+    if (args[1] == NULL) {
+
+        fprintf(stderr, EXEC_ERROR);
+        exit(-1);
+    } else {
+        value = getenv(args[1]);
+        if (value == NULL) {
+            fprintf(stderr, EXEC_ERROR);
+        } else {
+            printf("%s\n", value);
+        }
+    }
+    return SHELL_STATUS;
 }
 
 int main (int argc, char** argv) {
@@ -111,7 +154,7 @@ int main (int argc, char** argv) {
     puts (COPY_STRING);
     puts ("Ctr.Z to Exit\n");
 
-    while (RUNNING) {
+    while (!SHELL_STATUS) {
 
         char* input = readline("~ ");
         if (strcmp(input, "") == 0) {continue;}
@@ -119,8 +162,23 @@ int main (int argc, char** argv) {
         add_history(input);
         char** tokens = tsh_tokenize(input);
 
+        /*
+        int i = 0;
+        while (tokens[i] != '\0') {
+            printf("%s\n", tokens[i]);
+            i++;
+        }
+        */
+
         if (strcmp(tokens[0], "cd") == 0) {
             tsh_cd(tokens);
+
+        } else if (strcmp(tokens[0], "set") == 0) {
+            tsh_export(tokens);
+
+        } else if (strcmp(tokens[0], "get") == 0) {
+            tsh_import(tokens);
+
         } else {tsh_execute(tokens);}
 
         free(input);
