@@ -25,6 +25,19 @@
 #include <editline/history.h>
 #include "tinysh.h"
 
+int tsh_cd(char **args);
+int tsh_export(char **args);
+int tsh_import(char **args);
+
+char* builtins[] = {
+    "cd", "get", "set"
+};
+int (*builtin_funcs[]) (char**) = {
+    &tsh_cd, 
+    &tsh_import, 
+    &tsh_export
+};
+
 /*
 * Reallocate token buffer
 * @param buffer the original block of memory
@@ -161,25 +174,16 @@ int main (int argc, char** argv) {
 
         add_history(input);
         char** tokens = tsh_tokenize(input);
+        int execd = 0;
 
-        /*
-        int i = 0;
-        while (tokens[i] != '\0') {
-            printf("%s\n", tokens[i]);
-            i++;
+        for (int i = 0; i < 3; i++) {
+            if (strcmp(tokens[0], builtins[i]) == 0) {
+
+                (*builtin_funcs[i])(tokens);
+                execd = 1;
+            }
         }
-        */
-
-        if (strcmp(tokens[0], "cd") == 0) {
-            tsh_cd(tokens);
-
-        } else if (strcmp(tokens[0], "set") == 0) {
-            tsh_export(tokens);
-
-        } else if (strcmp(tokens[0], "get") == 0) {
-            tsh_import(tokens);
-
-        } else {tsh_execute(tokens);}
+        if (!execd) tsh_execute(tokens);
 
         free(input);
         free(tokens);
