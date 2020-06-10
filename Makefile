@@ -11,9 +11,8 @@ default: build
 build:
 	- mkdir bin
 	- gcc $(CFLAGS) $(PROGRAM) $(LIBS) -o bin/tinysh
-
 test:
-	./bin/take2
+	./bin/tinysh
 
 sync:
 	- bash sync.sh "update"

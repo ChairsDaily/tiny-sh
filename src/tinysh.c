@@ -201,7 +201,7 @@ int main (int argc, char** argv) {
         for (int i = 0; i < 3; i++) {
             if (strcmp(tokens[0], builtins[i]) == 0) {
 
-                if (tokens[0] == NULL || tokens[1 == NULL) {
+                if (tokens[0] == NULL || tokens[1] == NULL) {
                     tsh_error_handle(ARG_ERROR);
                 } 
                 (*builtin_funcs[i])(tokens);
